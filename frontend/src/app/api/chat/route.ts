@@ -127,6 +127,47 @@ function buildTools(req: NextRequest, toolMode: 'auto' | 'manual' | 'none') {
             inputSchema: zodSchema(z.object({})),
             execute: async () => ({ datetime: new Date().toISOString() }),
         }),
+
+        browsePage: tool({
+            description:
+                'Open a URL in a headless browser using Playwright and return the page content. ' +
+                'Use this to fetch live web pages, read articles, or get content from any website.',
+            inputSchema: zodSchema(z.object({
+                url: z.string().describe('The full URL to open, e.g. https://example.com'),
+            })),
+            execute: async ({ url }) => {
+                const baseUrl = req.headers.get('origin') || 'http://localhost:3000';
+                try {
+                    // Navigate to the URL
+                    const navRes = await fetch(`${baseUrl}/api/mcp`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            method: 'tools/call',
+                            params: { name: 'browser_navigate', arguments: { url } },
+                        }),
+                    });
+                    if (!navRes.ok) return { error: `Navigation failed: ${navRes.status}`, url };
+
+                    // Get accessibility snapshot (structured text content)
+                    const snapRes = await fetch(`${baseUrl}/api/mcp`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            method: 'tools/call',
+                            params: { name: 'browser_snapshot', arguments: {} },
+                        }),
+                    });
+                    if (!snapRes.ok) return { error: `Snapshot failed: ${snapRes.status}`, url };
+
+                    const data = await snapRes.json() as { result?: { content?: Array<{ text?: string }> } };
+                    const text = data.result?.content?.map((c) => c.text ?? '').join('\n') ?? '';
+                    return { url, content: text.slice(0, 8000) };
+                } catch (err: unknown) {
+                    return { error: err instanceof Error ? err.message : 'Browser error', url };
+                }
+            },
+        }),
     };
 }
 

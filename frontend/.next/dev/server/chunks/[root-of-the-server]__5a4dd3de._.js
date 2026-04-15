@@ -193,6 +193,66 @@ function buildTools(req, toolMode) {
             execute: async ()=>({
                     datetime: new Date().toISOString()
                 })
+        }),
+        browsePage: (0, __TURBOPACK__imported__module__$5b$project$5d2f$frontend$2f$node_modules$2f40$ai$2d$sdk$2f$provider$2d$utils$2f$dist$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$locals$3e$__["tool"])({
+            description: 'Open a URL in a headless browser using Playwright and return the page content. ' + 'Use this to fetch live web pages, read articles, or get content from any website.',
+            inputSchema: (0, __TURBOPACK__imported__module__$5b$project$5d2f$frontend$2f$node_modules$2f40$ai$2d$sdk$2f$provider$2d$utils$2f$dist$2f$index$2e$mjs__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$locals$3e$__["zodSchema"])(__TURBOPACK__imported__module__$5b$project$5d2f$frontend$2f$node_modules$2f$zod$2f$v4$2f$classic$2f$external$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$export__$2a$__as__z$3e$__["z"].object({
+                url: __TURBOPACK__imported__module__$5b$project$5d2f$frontend$2f$node_modules$2f$zod$2f$v4$2f$classic$2f$external$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__$3c$export__$2a$__as__z$3e$__["z"].string().describe('The full URL to open, e.g. https://example.com')
+            })),
+            execute: async ({ url })=>{
+                const baseUrl = req.headers.get('origin') || 'http://localhost:3000';
+                try {
+                    // Navigate to the URL
+                    const navRes = await fetch(`${baseUrl}/api/mcp`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            method: 'tools/call',
+                            params: {
+                                name: 'browser_navigate',
+                                arguments: {
+                                    url
+                                }
+                            }
+                        })
+                    });
+                    if (!navRes.ok) return {
+                        error: `Navigation failed: ${navRes.status}`,
+                        url
+                    };
+                    // Get accessibility snapshot (structured text content)
+                    const snapRes = await fetch(`${baseUrl}/api/mcp`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            method: 'tools/call',
+                            params: {
+                                name: 'browser_snapshot',
+                                arguments: {}
+                            }
+                        })
+                    });
+                    if (!snapRes.ok) return {
+                        error: `Snapshot failed: ${snapRes.status}`,
+                        url
+                    };
+                    const data = await snapRes.json();
+                    const text = data.result?.content?.map((c)=>c.text ?? '').join('\n') ?? '';
+                    return {
+                        url,
+                        content: text.slice(0, 8000)
+                    };
+                } catch (err) {
+                    return {
+                        error: err instanceof Error ? err.message : 'Browser error',
+                        url
+                    };
+                }
+            }
         })
     };
 }

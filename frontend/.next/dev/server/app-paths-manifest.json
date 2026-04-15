@@ -1,4 +1,6 @@
 {
   "/api/chat/route": "app/api/chat/route.js",
+  "/api/mcp/route": "app/api/mcp/route.js",
+  "/auth/signin/page": "app/auth/signin/page.js",
   "/chat-enhanced/page": "app/chat-enhanced/page.js"
 }
