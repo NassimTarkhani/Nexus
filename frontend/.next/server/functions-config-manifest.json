@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/chat": {
+      "maxDuration": 60
+    },
+    "/api/documents/chat": {
+      "maxDuration": 60
+    },
+    "/api/documents/upload": {},
+    "/api/js-exec": {},
+    "/api/mcp": {},
+    "/api/mock/image-gen": {},
+    "/api/mock/js-executor": {},
+    "/api/mock/web-search": {},
+    "/api/search": {}
+  }
+}

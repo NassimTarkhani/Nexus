@@ -423,24 +423,17 @@ const useAuthStore = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fronten
                 if (session?.user) {
                     // Fetch user profile from public.users
                     const { data: profile } = await __TURBOPACK__imported__module__$5b$project$5d2f$frontend$2f$src$2f$lib$2f$supabase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["supabase"].from('users').select('*').eq('id', session.user.id).single();
-                    if (profile) {
-                        set({
-                            user: {
-                                id: profile.id,
-                                email: profile.email,
-                                full_name: profile.full_name,
-                                role: profile.role
-                            },
-                            loading: false,
-                            initialized: true
-                        });
-                    } else {
-                        set({
-                            user: null,
-                            loading: false,
-                            initialized: true
-                        });
-                    }
+                    // Use profile if it exists, otherwise fall back to Supabase auth user
+                    set({
+                        user: {
+                            id: session.user.id,
+                            email: profile?.email ?? session.user.email ?? '',
+                            full_name: profile?.full_name ?? session.user.user_metadata?.full_name ?? session.user.email ?? 'User',
+                            role: profile?.role ?? 'user'
+                        },
+                        loading: false,
+                        initialized: true
+                    });
                 } else {
                     set({
                         user: null,
@@ -452,17 +445,15 @@ const useAuthStore = (0, __TURBOPACK__imported__module__$5b$project$5d2f$fronten
                 __TURBOPACK__imported__module__$5b$project$5d2f$frontend$2f$src$2f$lib$2f$supabase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["supabase"].auth.onAuthStateChange(async (event, session)=>{
                     if (event === 'SIGNED_IN' && session?.user) {
                         const { data: profile } = await __TURBOPACK__imported__module__$5b$project$5d2f$frontend$2f$src$2f$lib$2f$supabase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["supabase"].from('users').select('*').eq('id', session.user.id).single();
-                        if (profile) {
-                            set({
-                                user: {
-                                    id: profile.id,
-                                    email: profile.email,
-                                    full_name: profile.full_name,
-                                    role: profile.role
-                                },
-                                loading: false
-                            });
-                        }
+                        set({
+                            user: {
+                                id: session.user.id,
+                                email: profile?.email ?? session.user.email ?? '',
+                                full_name: profile?.full_name ?? session.user.user_metadata?.full_name ?? session.user.email ?? 'User',
+                                role: profile?.role ?? 'user'
+                            },
+                            loading: false
+                        });
                     } else if (event === 'SIGNED_OUT') {
                         set({
                             user: null,

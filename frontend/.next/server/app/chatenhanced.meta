@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/chatenhanced/layout,_N_T_/chatenhanced/page,_N_T_/chatenhanced"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/chatenhanced/__PAGE__",
+    "/chatenhanced",
+    "/_index",
+    "/_head"
+  ]
+}

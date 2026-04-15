@@ -7,3 +7,4 @@ export { workflowsService } from './workflows';
 export { mcpServersService } from './mcpServers';
 export { conversationsService } from './conversations';
 export { messagesService } from './messages';
+export { documentsService } from './documents';

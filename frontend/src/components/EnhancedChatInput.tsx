@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Send, Loader2, StopCircle, Sparkles } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Send, Loader2, StopCircle, Sparkles, Zap, Hand, Ban, X, Image as ImageIcon, Mic } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/src/components/ui/button";
 import { Textarea } from "@/src/components/ui/textarea";
 import { ModelSelector } from "@/src/components/ModelSelector";
 import { PresetSelector } from "@/src/components/PresetSelector";
 import { ToolsDropdown, type Tool } from "@/src/components/ToolsDropdown";
+import { ToolMention, type MentionItem } from "@/src/components/ToolMention";
 import { DEFAULT_MODEL, type ChatModel } from "@/src/lib/models/openrouter";
 import { cn } from "@/src/lib/utils";
 
+export type ToolMode = "auto" | "manual" | "none";
+
 interface EnhancedChatInputProps {
-    onSend: (message: string) => void;
+    onSend: (message: string, mentions?: MentionItem[]) => void;
     onStop?: () => void;
     isStreaming: boolean;
     hasMessages: boolean;
@@ -24,8 +27,13 @@ interface EnhancedChatInputProps {
     onToolChange?: (tool: Tool | null) => void;
     workflows?: Tool[];
     mcpTools?: Tool[];
+    agents?: MentionItem[];
     placeholder?: string;
     disabled?: boolean;
+    toolMode?: ToolMode;
+    onToolModeChange?: (mode: ToolMode) => void;
+    onImageGenClick?: () => void;
+    onVoiceClick?: () => void;
 }
 
 export function EnhancedChatInput({
@@ -41,12 +49,28 @@ export function EnhancedChatInput({
     onToolChange,
     workflows = [],
     mcpTools = [],
-    placeholder = "Ask me anything...",
+    agents = [],
+    placeholder = "Ask me anything… type @ to mention a tool",
     disabled = false,
+    toolMode = "auto",
+    onToolModeChange,
+    onImageGenClick,
+    onVoiceClick,
 }: EnhancedChatInputProps) {
     const [input, setInput] = useState("");
     const [isFocused, setIsFocused] = useState(false);
+    const [mentions, setMentions] = useState<MentionItem[]>([]);
+    // @ mention state
+    const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+    const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+    // Build full mention item list from workflows + mcpTools + agents
+    const allMentionItems: MentionItem[] = [
+        ...agents,
+        ...workflows.map((w) => ({ id: w.id, type: "workflow" as const, name: w.name, description: w.description })),
+        ...mcpTools.map((t) => ({ id: t.id, type: "tool" as const, name: t.name, description: t.description })),
+    ];
 
     // Auto-resize textarea
     useEffect(() => {
@@ -56,28 +80,73 @@ export function EnhancedChatInput({
         }
     }, [input]);
 
+    // Detect @ trigger in input
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value;
+        setInput(value);
+        const cursor = e.target.selectionStart ?? value.length;
+        // Look backwards from cursor for an @ with no space after it
+        const textBeforeCursor = value.slice(0, cursor);
+        const match = textBeforeCursor.match(/@(\w*)$/);
+        if (match) {
+            setMentionQuery(match[1]);
+            // Get bounding rect of the textarea for popup anchoring
+            if (textareaRef.current) {
+                setAnchorRect(textareaRef.current.getBoundingClientRect());
+            }
+        } else {
+            setMentionQuery(null);
+            setAnchorRect(null);
+        }
+    }, []);
+
+    const handleMentionSelect = useCallback((item: MentionItem) => {
+        // Replace the @query with @name in the input
+        const cursor = textareaRef.current?.selectionStart ?? input.length;
+        const textBeforeCursor = input.slice(0, cursor);
+        const replaced = textBeforeCursor.replace(/@(\w*)$/, `@${item.name} `);
+        const newValue = replaced + input.slice(cursor);
+        setInput(newValue);
+        setMentionQuery(null);
+        setAnchorRect(null);
+        setMentions((prev) => [...prev.filter((m) => m.id !== item.id), item]);
+        // Restore focus
+        setTimeout(() => {
+            if (textareaRef.current) {
+                textareaRef.current.focus();
+                const pos = replaced.length;
+                textareaRef.current.setSelectionRange(pos, pos);
+            }
+        }, 0);
+    }, [input]);
+
+    const removeMention = (id: string) => {
+        setMentions((prev) => prev.filter((m) => m.id !== id));
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim() || isStreaming || disabled) return;
-
-        onSend(input);
+        onSend(input, mentions.length > 0 ? mentions : undefined);
         setInput("");
-
-        // Reset textarea height
-        if (textareaRef.current) {
-            textareaRef.current.style.height = "auto";
-        }
+        setMentions([]);
+        if (textareaRef.current) textareaRef.current.style.height = "auto";
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
+        // When mention popup is open, don't intercept Enter/ArrowUp/ArrowDown
+        if (mentionQuery !== null) return;
         if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
             handleSubmit(e);
         }
     };
 
-    // When no messages, parent container centers this via flex
-    // When has messages, it's positioned at the bottom
+    const toolModeConfig: { mode: ToolMode; label: string; icon: React.ReactNode; color: string }[] = [
+        { mode: "auto", label: "Auto", icon: <Zap className="w-3 h-3" />, color: "text-amber-400" },
+        { mode: "manual", label: "Manual", icon: <Hand className="w-3 h-3" />, color: "text-emerald-400" },
+        { mode: "none", label: "None", icon: <Ban className="w-3 h-3" />, color: "text-zinc-500" },
+    ];
 
     return (
         <div
@@ -86,6 +155,17 @@ export function EnhancedChatInput({
                 !hasMessages && "px-4"
             )}
         >
+            {/* @ mention popup */}
+            {mentionQuery !== null && (
+                <ToolMention
+                    query={mentionQuery}
+                    items={allMentionItems}
+                    anchorRect={anchorRect}
+                    onSelect={handleMentionSelect}
+                    onClose={() => { setMentionQuery(null); setAnchorRect(null); }}
+                />
+            )}
+
             {/* Welcome message when no messages */}
             <AnimatePresence>
                 {!hasMessages && (
@@ -99,12 +179,7 @@ export function EnhancedChatInput({
                         <motion.div
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
-                            transition={{
-                                type: "spring",
-                                stiffness: 200,
-                                damping: 15,
-                                delay: 0.1,
-                            }}
+                            transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.1 }}
                             className="inline-flex items-center justify-center w-16 h-16 mb-4 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600"
                         >
                             <Sparkles className="w-8 h-8 text-white" />
@@ -113,7 +188,7 @@ export function EnhancedChatInput({
                             What can I help you create today?
                         </h1>
                         <p className="text-zinc-500">
-                            Choose a model and start chatting with AI
+                            Choose a model and start chatting with AI · type <kbd className="px-1 py-0.5 rounded bg-zinc-800 text-zinc-400 text-sm">@</kbd> to mention a tool
                         </p>
                     </motion.div>
                 )}
@@ -132,7 +207,7 @@ export function EnhancedChatInput({
                     disabled && "opacity-50 cursor-not-allowed"
                 )}
             >
-                {/* Model selector header - only show when no messages (centered mode) */}
+                {/* Model/preset/tool selectors — show in header when no messages */}
                 {!hasMessages && (
                     <div className="flex flex-col gap-2 px-4 py-3 border-b border-zinc-800">
                         <div className="flex items-center gap-2">
@@ -168,12 +243,56 @@ export function EnhancedChatInput({
                     </div>
                 )}
 
+                {/* Tool mode toggle */}
+                {onToolModeChange && (
+                    <div className="flex items-center gap-1 px-4 pt-3 pb-1">
+                        <span className="text-[10px] uppercase tracking-widest text-zinc-600 mr-2">Tool mode</span>
+                        {toolModeConfig.map(({ mode, label, icon, color }) => (
+                            <button
+                                key={mode}
+                                type="button"
+                                onClick={() => onToolModeChange(mode)}
+                                className={cn(
+                                    "flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-all border",
+                                    toolMode === mode
+                                        ? `bg-zinc-800 border-zinc-600 ${color}`
+                                        : "border-transparent text-zinc-600 hover:text-zinc-400"
+                                )}
+                            >
+                                {icon}
+                                {label}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                {/* Active mention chips */}
+                {mentions.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 px-4 pt-2">
+                        {mentions.map((m) => (
+                            <span
+                                key={m.id}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-600/20 border border-indigo-500/30 text-xs text-indigo-300"
+                            >
+                                @{m.name}
+                                <button
+                                    type="button"
+                                    onClick={() => removeMention(m.id)}
+                                    className="ml-0.5 hover:text-white transition-colors"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            </span>
+                        ))}
+                    </div>
+                )}
+
                 {/* Input area */}
                 <form onSubmit={handleSubmit} className="relative">
                     <Textarea
                         ref={textareaRef}
                         value={input}
-                        onChange={(e) => setInput(e.target.value)}
+                        onChange={handleInputChange}
                         onKeyDown={handleKeyDown}
                         onFocus={() => setIsFocused(true)}
                         onBlur={() => setIsFocused(false)}
@@ -186,38 +305,70 @@ export function EnhancedChatInput({
                         rows={1}
                     />
 
-                    {/* Send button */}
-                    <div className="flex items-center justify-end px-4 pb-4">
-                        <Button
-                            type="submit"
-                            size="sm"
-                            disabled={!input.trim() || isStreaming || disabled}
-                            className={cn(
-                                "rounded-xl transition-all duration-200",
-                                input.trim() && !isStreaming && !disabled
-                                    ? "bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/50"
-                                    : ""
+                    {/* Bottom action bar */}
+                    <div className="flex items-center justify-between px-4 pb-4">
+                        {/* Left: extra action buttons */}
+                        <div className="flex items-center gap-1">
+                            {onImageGenClick && (
+                                <button
+                                    type="button"
+                                    onClick={onImageGenClick}
+                                    title="Generate image"
+                                    className="p-1.5 text-zinc-500 hover:text-zinc-300 rounded-lg hover:bg-zinc-800 transition-colors"
+                                >
+                                    <ImageIcon className="w-4 h-4" />
+                                </button>
                             )}
-                        >
+                            {onVoiceClick && (
+                                <button
+                                    type="button"
+                                    onClick={onVoiceClick}
+                                    title="Voice input"
+                                    className="p-1.5 text-zinc-500 hover:text-zinc-300 rounded-lg hover:bg-zinc-800 transition-colors"
+                                >
+                                    <Mic className="w-4 h-4" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Right: Stop / Send */}
+                        <div className="flex items-center gap-2">
                             {isStreaming ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    Thinking...
-                                </>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={onStop}
+                                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl"
+                                >
+                                    <StopCircle className="w-4 h-4 mr-1" />
+                                    Stop
+                                </Button>
                             ) : (
-                                <>
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    disabled={!input.trim() || disabled}
+                                    className={cn(
+                                        "rounded-xl transition-all duration-200",
+                                        input.trim() && !disabled
+                                            ? "bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-500/50"
+                                            : ""
+                                    )}
+                                >
                                     <Send className="w-4 h-4 mr-2" />
                                     Send
-                                </>
+                                </Button>
                             )}
-                        </Button>
+                        </div>
                     </div>
                 </form>
 
                 {/* Footer hint */}
                 <div className="px-4 pb-3 text-xs text-zinc-600">
-                    Press <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Enter</kbd> to send,{" "}
-                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Shift + Enter</kbd> for new line
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Enter</kbd> send ·{" "}
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Shift+Enter</kbd> new line ·{" "}
+                    <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">@</kbd> mention tool
                 </div>
             </motion.div>
 

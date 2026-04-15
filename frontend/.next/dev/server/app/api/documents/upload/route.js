@@ -1,0 +1,10 @@
+var R=require("../../../../chunks/[turbopack]_runtime.js")("server/app/api/documents/upload/route.js")
+R.c("server/chunks/9e883_unpdf_dist_index_mjs_0f98f484._.js")
+R.c("server/chunks/9e883_next_848b4ded._.js")
+R.c("server/chunks/9e883_@opentelemetry_api_build_esm_8d36f10b._.js")
+R.c("server/chunks/9e883_@supabase_auth-js_dist_module_ce15a364._.js")
+R.c("server/chunks/9e883_49f06f76._.js")
+R.c("server/chunks/[root-of-the-server]__ce450dd1._.js")
+R.c("server/chunks/frontend__next-internal_server_app_api_documents_upload_route_actions_12599ab0.js")
+R.m("[project]/frontend/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/frontend/src/app/api/documents/upload/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)")
+module.exports=R.m("[project]/frontend/node_modules/next/dist/esm/build/templates/app-route.js { INNER_APP_ROUTE => \"[project]/frontend/src/app/api/documents/upload/route.ts [app-route] (ecmascript)\" } [app-route] (ecmascript)").exports

@@ -45,20 +45,17 @@ export const useAuthStore = create<AuthState>((set) => ({
           .eq('id', session.user.id)
           .single();
 
-        if (profile) {
-          set({
-            user: {
-              id: profile.id,
-              email: profile.email,
-              full_name: profile.full_name,
-              role: profile.role,
-            },
-            loading: false,
-            initialized: true,
-          });
-        } else {
-          set({ user: null, loading: false, initialized: true });
-        }
+        // Use profile if it exists, otherwise fall back to Supabase auth user
+        set({
+          user: {
+            id: session.user.id,
+            email: profile?.email ?? session.user.email ?? '',
+            full_name: profile?.full_name ?? session.user.user_metadata?.full_name ?? session.user.email ?? 'User',
+            role: profile?.role ?? 'user',
+          },
+          loading: false,
+          initialized: true,
+        });
       } else {
         set({ user: null, loading: false, initialized: true });
       }
@@ -72,17 +69,15 @@ export const useAuthStore = create<AuthState>((set) => ({
             .eq('id', session.user.id)
             .single();
 
-          if (profile) {
-            set({
-              user: {
-                id: profile.id,
-                email: profile.email,
-                full_name: profile.full_name,
-                role: profile.role,
-              },
-              loading: false,
-            });
-          }
+          set({
+            user: {
+              id: session.user.id,
+              email: profile?.email ?? session.user.email ?? '',
+              full_name: profile?.full_name ?? session.user.user_metadata?.full_name ?? session.user.email ?? 'User',
+              role: profile?.role ?? 'user',
+            },
+            loading: false,
+          });
         } else if (event === 'SIGNED_OUT') {
           set({ user: null, loading: false });
         }

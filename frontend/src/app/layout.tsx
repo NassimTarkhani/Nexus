@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/src/lib/hooks/useTheme";
 import { DevTools } from "@/src/components/DevTools";
 import { BackgroundAnimations } from "@/src/components/BackgroundAnimations";
 import { ApiKeysSyncer } from "@/src/components/ApiKeysSyncer";
+import AuthInitializer from "@/src/components/AuthInitializer";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -24,6 +25,7 @@ export default function RootLayout({
       <body className={`${inter.className} antialiased`}>
         <ThemeProvider>
           <BackgroundAnimations />
+          <AuthInitializer />
           <ApiKeysSyncer />
           <DevTools />
           {children}

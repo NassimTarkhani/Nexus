@@ -1,9 +1,134 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
 import { createOpenAI } from '@ai-sdk/openai';
-import { streamText } from 'ai';
+import { generateText, tool, zodSchema } from 'ai';
+import { z } from 'zod';
 import { supabase } from '@/src/lib/supabase';
 
-export const runtime = 'edge';
+export const maxDuration = 60;
+
+const FREE_MODEL_FALLBACK = 'openai/gpt-oss-120b:free';
+const KNOWN_UNAVAILABLE_FREE_MODELS = new Set([
+    'google/gemini-2.0-flash-exp:free',
+    'mistralai/mistral-small-3.2-24b-instruct:free',
+    'qwen/qwen3-235b-a22b:free',
+    'qwen/qwen3-30b-a3b:free',
+    'deepseek/deepseek-r1-0528:free',
+    'deepseek/deepseek-chat-v3-0324:free',
+    'microsoft/phi-4-reasoning-plus:free',
+    'moonshotai/kimi-dev-72b:free',
+    'meta-llama/llama-4-maverick:free',
+]);
+
+function resolveModel(requestedModel: string): string {
+    return KNOWN_UNAVAILABLE_FREE_MODELS.has(requestedModel)
+        ? FREE_MODEL_FALLBACK
+        : requestedModel;
+}
+
+function isRetryableOpenRouterKeyError(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return normalized.includes('user not found')
+        || normalized.includes('unauthorized')
+        || normalized.includes('incorrect api key')
+        || normalized.includes('invalid api key')
+        || normalized.includes('api key usd spend limit exceeded')
+        || normalized.includes('credit limit')
+        || normalized.includes('401');
+}
+
+async function generateWithOpenRouter(options: {
+    apiKey: string;
+    model: string;
+    messages: ChatMessage[] | ({ role: 'system'; content: string } | ChatMessage)[];
+    temperature: number;
+    tools: ReturnType<typeof buildTools>;
+}) {
+    const openrouter = createOpenAI({
+        apiKey: options.apiKey,
+        baseURL: 'https://openrouter.ai/api/v1',
+    });
+
+    return generateText({
+        model: openrouter.chat(options.model),
+        messages: options.messages,
+        temperature: options.temperature,
+        ...(options.tools ? { tools: options.tools, maxSteps: 5 } : {}),
+    });
+}
+
+// ── Tool definitions ───────────────────────────────────────────────────────
+
+function buildTools(req: NextRequest, toolMode: 'auto' | 'manual' | 'none') {
+    if (toolMode === 'none') return undefined;
+
+    return {
+        webSearch: tool({
+            description:
+                'Search the web for real-time information. Use this for current events, facts, and anything outside your training data.',
+            inputSchema: zodSchema(z.object({
+                query: z.string().describe('The search query'),
+                maxResults: z.number().default(5),
+            })),
+            execute: async ({ query, maxResults }) => {
+                const limit = maxResults ?? 5;
+                const baseUrl = req.headers.get('origin') || 'http://localhost:3000';
+                const res = await fetch(
+                    `${baseUrl}/api/search?q=${encodeURIComponent(query)}&limit=${limit}`
+                );
+                if (!res.ok) return { error: `Search failed: ${res.status}` };
+                return await res.json();
+            },
+        }),
+
+        runJavaScript: tool({
+            description: 'Execute JavaScript code and return output. Useful for calculations and data manipulation.',
+            inputSchema: zodSchema(z.object({
+                code: z.string().describe('JavaScript code to execute'),
+            })),
+            execute: async ({ code }) => {
+                const baseUrl = req.headers.get('origin') || 'http://localhost:3000';
+                const res = await fetch(`${baseUrl}/api/js-exec`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code }),
+                });
+                if (!res.ok) return { error: `Execution failed: ${res.status}` };
+                return await res.json();
+            },
+        }),
+
+        generateImage: tool({
+            description: 'Generate an image from a text description using DALL-E 3 or Gemini Imagen.',
+            inputSchema: zodSchema(z.object({
+                prompt: z.string().describe('Detailed description of the image to generate'),
+                size: z.enum(['1024x1024', '1792x1024', '1024x1792']).default('1024x1024'),
+            })),
+            execute: async ({ prompt, size }) => {
+                const imgSize = size ?? '1024x1024';
+                const baseUrl = req.headers.get('origin') || 'http://localhost:3000';
+                const geminiKey = process.env.GEMINI_API_KEY;
+                const openaiKey = process.env.OPENAI_API_KEY;
+                const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+                if (geminiKey) headers['x-gemini-api-key'] = geminiKey;
+                if (openaiKey) headers['x-openai-api-key'] = openaiKey;
+                const provider = geminiKey ? 'gemini' : 'openai';
+                const res = await fetch(`${baseUrl}/api/image-gen`, {
+                    method: 'POST', headers,
+                    body: JSON.stringify({ prompt, provider, size: imgSize }),
+                });
+                if (!res.ok) return { error: 'Image generation failed' };
+                const data = await res.json();
+                return { url: data.url, prompt };
+            },
+        }),
+
+        getCurrentDateTime: tool({
+            description: 'Get the current date and time.',
+            inputSchema: zodSchema(z.object({})),
+            execute: async () => ({ datetime: new Date().toISOString() }),
+        }),
+    };
+}
 
 interface ChatMessage {
     role: 'system' | 'user' | 'assistant';
@@ -15,9 +140,10 @@ interface ChatRequest {
     model: string;
     conversationId?: string;
     workflowId?: string;
-    mcpToolSchema?: any;
+    mcpToolSchema?: unknown;
     presetId?: string;
     temperature?: number;
+    toolMode?: 'auto' | 'manual' | 'none';
 }
 
 export async function POST(req: NextRequest) {
@@ -28,9 +154,9 @@ export async function POST(req: NextRequest) {
             model,
             conversationId,
             workflowId,
-            mcpToolSchema,
             presetId,
             temperature = 0.7,
+            toolMode = 'auto',
         } = body;
 
         if (!messages || !model) {
@@ -42,10 +168,9 @@ export async function POST(req: NextRequest) {
 
         // Client fetches the key fresh from DB before each request and sends it here.
         // Fall back to env var for dev/self-hosted setups without a saved DB key.
-        const apiKey =
-            req.headers.get('x-openrouter-api-key') ||
-            process.env.OPENROUTER_API_KEY ||
-            null;
+        const headerApiKey = req.headers.get('x-openrouter-api-key');
+        const envApiKey = process.env.OPENROUTER_API_KEY || null;
+        const apiKey = headerApiKey || envApiKey;
 
         if (!apiKey) {
             return NextResponse.json(
@@ -92,82 +217,64 @@ export async function POST(req: NextRequest) {
         }
 
         // MCP tool context
-        if (mcpToolSchema) {
-            systemPrompt += `You have access to the following MCP tool: ${JSON.stringify(mcpToolSchema)}\n\n`;
+        if (toolMode !== 'none') {
+            systemPrompt +=
+                'You have access to tools: webSearch, runJavaScript, generateImage, getCurrentDateTime. ' +
+                'Use them proactively when the user asks for current information, computations, or images.\n\n';
         }
 
         const processedMessages = systemPrompt
             ? [{ role: 'system' as const, content: systemPrompt }, ...messages]
             : messages;
 
-        const openrouter = createOpenAI({
-            apiKey,
-            baseURL: 'https://openrouter.ai/api/v1',
-        });
+        const resolvedModel = resolveModel(model);
 
-        const result = await streamText({
-            model: openrouter.chat(model),
-            messages: processedMessages,
-            temperature,
-        });
+        const tools = buildTools(req, toolMode);
+        let result;
 
-        const encoder = new TextEncoder();
-        let fullResponse = '';
+        try {
+            result = await generateWithOpenRouter({
+                apiKey,
+                model: resolvedModel,
+                messages: processedMessages,
+                temperature,
+                tools,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'OpenRouter request failed';
+            const shouldRetryWithEnv = Boolean(
+                headerApiKey && envApiKey && headerApiKey !== envApiKey && isRetryableOpenRouterKeyError(message)
+            );
 
-        const stream = new ReadableStream({
-            async start(controller) {
-                try {
-                    for await (const chunk of result.textStream) {
-                        fullResponse += chunk;
-                        controller.enqueue(
-                            encoder.encode(`data: ${JSON.stringify({ content: chunk, done: false })}\n\n`)
-                        );
-                    }
+            if (!shouldRetryWithEnv) {
+                throw error;
+            }
 
-                    if (conversationId) {
-                        try {
-                            await supabase.from('messages').insert({
-                                conversation_id: conversationId,
-                                role: 'assistant',
-                                content: fullResponse,
-                                model,
-                                provider: 'openrouter',
-                            });
-                        } catch (dbErr) {
-                            console.error('Failed to save assistant message:', dbErr);
-                        }
+            result = await generateWithOpenRouter({
+                apiKey: envApiKey!,
+                model: resolvedModel,
+                messages: processedMessages,
+                temperature,
+                tools,
+            });
+        }
 
-                        try {
-                            await supabase
-                                .from('conversations')
-                                .update({ updated_at: new Date().toISOString() })
-                                .eq('id', conversationId);
-                        } catch (dbErr) {
-                            console.error('Failed to update conversation:', dbErr);
-                        }
-                    }
+        const payload = [
+            `data: ${JSON.stringify({ content: result.text ?? '', done: false })}`,
+            'data: [DONE]',
+            '',
+        ].join('\n\n');
 
-                    controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-                    controller.close();
-                } catch (error) {
-                    console.error('Stream error:', error);
-                    controller.error(error);
-                }
-            },
-        });
-
-        return new Response(stream, {
+        return new Response(payload, {
             headers: {
                 'Content-Type': 'text/event-stream',
                 'Cache-Control': 'no-cache',
                 'Connection': 'keep-alive',
             },
         });
-    } catch (error: any) {
-        console.error('Chat API error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Internal server error' },
-            { status: 500 }
-        );
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Internal server error';
+        console.error('Chat API error:', message);
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }

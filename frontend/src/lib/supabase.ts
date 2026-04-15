@@ -122,6 +122,36 @@ export interface Database {
                 Insert: Omit<Database['public']['Tables']['messages']['Row'], 'id' | 'created_at'>;
                 Update: Partial<Database['public']['Tables']['messages']['Insert']>;
             };
+            documents: {
+                Row: {
+                    id: string;
+                    user_id: string;
+                    name: string;
+                    file_type: string;
+                    file_size: number;
+                    content: string | null;
+                    chunk_count: number;
+                    status: 'uploading' | 'processing' | 'ready' | 'error';
+                    error_message: string | null;
+                    created_at: string;
+                    updated_at: string;
+                };
+                Insert: Omit<Database['public']['Tables']['documents']['Row'], 'id' | 'created_at' | 'updated_at'>;
+                Update: Partial<Database['public']['Tables']['documents']['Insert']>;
+            };
+            document_chunks: {
+                Row: {
+                    id: string;
+                    document_id: string;
+                    content: string;
+                    chunk_index: number;
+                    token_count: number;
+                    metadata: Record<string, unknown>;
+                    created_at: string;
+                };
+                Insert: Omit<Database['public']['Tables']['document_chunks']['Row'], 'id' | 'created_at'>;
+                Update: Partial<Database['public']['Tables']['document_chunks']['Insert']>;
+            };
         };
     };
 }

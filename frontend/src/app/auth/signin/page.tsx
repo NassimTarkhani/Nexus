@@ -80,7 +80,7 @@ export default function SignInPage() {
             }
 
             console.log('🎉 Sign in complete, redirecting...');
-            router.push("/");
+            router.push("/chat-enhanced");
             router.refresh();
 
         } catch (err: any) {

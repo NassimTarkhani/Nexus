@@ -8,29 +8,38 @@ import { EnhancedMessageList, type Message } from "./EnhancedMessageList";
 import { PresetSelector } from "./PresetSelector";
 import { ModelSelector } from "./ModelSelector";
 import { ToolsDropdown, type Tool } from "./ToolsDropdown";
+import { ImageGenModal } from "./ImageGenModal";
+import { VoiceAssistant } from "./VoiceAssistant";
 import { DEFAULT_MODEL, type ChatModel } from "@/src/lib/models/openrouter";
 import { useAuthStore } from "@/src/lib/store";
 import { supabase } from "@/src/lib/supabase";
 import { conversationsService } from "@/src/lib/services/conversations";
 import { messagesService } from "@/src/lib/services/messages";
 import { getPreset } from "@/src/lib/services/presets";
+import { useWorkflows, useMcpServers } from "@/src/lib/hooks/useDatabase";
+import type { MentionItem } from "./ToolMention";
 import { toast } from "sonner";
 
 interface EnhancedChatWindowProps {
     // Optionally load an existing conversation
     loadConversationId?: string | null;
     onConversationCreated?: (id: string, title: string) => void;
+    onMessagesChanged?: () => void;
 }
 
-export function EnhancedChatWindow({ loadConversationId, onConversationCreated }: EnhancedChatWindowProps = {}) {
+export function EnhancedChatWindow({ loadConversationId, onConversationCreated, onMessagesChanged }: EnhancedChatWindowProps = {}) {
     const { user } = useAuthStore();
     const [messages, setMessages] = useState<Message[]>([]);
     const [conversationId, setConversationId] = useState<string | null>(null);
     const [isStreaming, setIsStreaming] = useState(false);
+    const [loadingHistory, setLoadingHistory] = useState(false);
     const [streamingMessageId, setStreamingMessageId] = useState<string | undefined>();
     const [selectedModel, setSelectedModel] = useState<ChatModel>(DEFAULT_MODEL);
     const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
     const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
+    const [showVoice, setShowVoice] = useState(false);
+    const [showImageGen, setShowImageGen] = useState(false);
+    const [toolMode, setToolMode] = useState<"auto" | "manual" | "none">("none");
     // Use useRef (not useState) so mutations don't trigger re-renders
     const abortControllerRef = useRef<AbortController | null>(null);
     const selectedModelRef = useRef<ChatModel>(DEFAULT_MODEL);
@@ -42,10 +51,17 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
 
     // Load an existing conversation when loadConversationId changes
     useEffect(() => {
-        if (!loadConversationId || loadConversationId === conversationId) return;
+        if (!loadConversationId) return;
+        // Clear immediately so old messages don't flash while loading
+        setMessages([]);
+        setConversationId(loadConversationId);
+        setLoadingHistory(true);
+
+        let cancelled = false;
         const load = async () => {
             try {
                 const msgs = await messagesService.getMessages(loadConversationId);
+                if (cancelled) return;
                 const mapped: Message[] = msgs.map((m) => ({
                     id: m.id,
                     role: m.role as "user" | "assistant",
@@ -54,13 +70,16 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
                     model: m.model || undefined,
                 }));
                 setMessages(mapped);
-                setConversationId(loadConversationId);
             } catch (err) {
+                if (cancelled) return;
                 console.error("Failed to load conversation:", err);
                 toast.error("Could not load conversation history");
+            } finally {
+                if (!cancelled) setLoadingHistory(false);
             }
         };
         load();
+        return () => { cancelled = true; };
     }, [loadConversationId]);
 
     useEffect(() => {
@@ -83,41 +102,54 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
         applyPresetModel();
     }, [selectedPreset, handleModelChange]);
 
-    const mockWorkflows: Tool[] = [
-        { id: "wf-1", type: "workflow", name: "Code Review Assistant", description: "Automated code review with best practices" },
-        { id: "wf-2", type: "workflow", name: "Content Writer", description: "Generate blog posts with SEO optimization" },
-    ];
+    // ── DB-backed tools ──────────────────────────────────────────────────
+    const { workflows: dbWorkflows } = useWorkflows();
+    const { mcpServers: dbMcpServers } = useMcpServers();
 
-    const mockMcpTools: Tool[] = [
-        { id: "mcp-1", type: "mcp", name: "Web Search", description: "Search the web for real-time information" },
-        { id: "mcp-2", type: "mcp", name: "Code Executor", description: "Run code in a sandboxed environment" },
-    ];
+    const liveWorkflows: Tool[] = dbWorkflows.map((w) => ({
+        id: w.id,
+        type: "workflow" as const,
+        name: w.name,
+        description: w.description ?? "",
+    }));
+
+    const liveMcpTools: Tool[] = dbMcpServers.map((s) => ({
+        id: s.id,
+        type: "mcp" as const,
+        name: s.name,
+        description: s.description ?? "",
+    }));
 
     const handleSend = useCallback(
-        async (content: string) => {
-            if (!user) {
-                toast.error("You must be logged in to chat");
-                return;
-            }
-
+        async (content: string, _mentions?: MentionItem[]) => {
             const modelAtSend = selectedModelRef.current;
+            const canPersist = Boolean(user);
 
             // Create or get conversation — conversationId is in deps so this is never stale
             let currentConversationId = conversationId;
             if (!currentConversationId) {
-                try {
-                    const title = content.slice(0, 100);
-                    const conversation = await conversationsService.createConversation({
-                        user_id: user.id,
-                        title,
-                    });
-                    currentConversationId = conversation.id;
+                const title = content.slice(0, 100);
+
+                if (canPersist && user) {
+                    try {
+                        const conversation = await conversationsService.createConversation({
+                            user_id: user.id,
+                            title,
+                        });
+                        currentConversationId = conversation.id;
+                        setConversationId(currentConversationId);
+                        onConversationCreated?.(conversation.id, title);
+                    } catch (error) {
+                        console.error("Failed to create conversation:", error);
+                        currentConversationId = `local-${Date.now()}`;
+                        setConversationId(currentConversationId);
+                        toast.error("Database unavailable", {
+                            description: "Chat will continue locally, but this conversation will not be saved.",
+                        });
+                    }
+                } else {
+                    currentConversationId = `local-${Date.now()}`;
                     setConversationId(currentConversationId);
-                    onConversationCreated?.(conversation.id, title);
-                } catch (error) {
-                    console.error("Failed to create conversation:", error);
-                    toast.error("Failed to create conversation. Check your Supabase connection.");
-                    return;
                 }
             }
 
@@ -134,13 +166,15 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
             };
 
             // Save user message to DB (non-blocking)
-            messagesService.createMessage({
-                conversation_id: currentConversationId,
-                role: "user",
-                content,
-                provider: "openrouter",
-                model: modelAtSend.model,
-            }).catch((e) => console.error("Failed to save user message:", e));
+            if (canPersist && !currentConversationId.startsWith("local-")) {
+                messagesService.createMessage({
+                    conversation_id: currentConversationId,
+                    role: "user",
+                    content,
+                    provider: "openrouter",
+                    model: modelAtSend.model,
+                }).catch((e) => console.error("Failed to save user message:", e));
+            }
 
             const assistantMessageId = `assistant-${Date.now()}`;
             const assistantMessage: Message = {
@@ -155,33 +189,12 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
             setIsStreaming(true);
             setStreamingMessageId(assistantMessageId);
 
-            // Fetch the user's OpenRouter API key directly from DB right now — no stale cache
-            const { data: keyRow } = await supabase
-                .from('user_api_keys')
-                .select('api_key')
-                .eq('provider', 'openrouter')
-                .eq('enabled', true)
-                .maybeSingle();
-
-            const apiKey = keyRow?.api_key ?? null;
-
-            if (!apiKey) {
-                toast.error("OpenRouter API key not found", {
-                    description: "Go to Settings → LLM Providers and save your OpenRouter API key.",
-                });
-                setMessages((prev) => prev.filter((m) => m.id !== assistantMessageId));
-                setIsStreaming(false);
-                setStreamingMessageId(undefined);
-                return;
-            }
-
             const abortController = new AbortController();
             abortControllerRef.current = abortController;
 
             try {
                 const headers: Record<string, string> = {
                     "Content-Type": "application/json",
-                    "x-openrouter-api-key": apiKey,
                 };
 
                 const response = await fetch("/api/chat", {
@@ -195,6 +208,7 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
                         model: modelAtSend.model,
                         conversationId: currentConversationId,
                         presetId: selectedPreset,
+                        toolMode,
                         workflowId: selectedTool?.type === "workflow" ? selectedTool.id : undefined,
                         mcpToolId: selectedTool?.type === "mcp" ? selectedTool.id : undefined,
                     }),
@@ -224,6 +238,9 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
                         if (data === "[DONE]") continue;
                         try {
                             const parsed = JSON.parse(data);
+                            if (parsed.error) {
+                                throw new Error(parsed.error);
+                            }
                             if (parsed.content) {
                                 accumulatedContent += parsed.content;
                                 setMessages((prev) =>
@@ -234,8 +251,11 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
                                     )
                                 );
                             }
-                        } catch {
-                            // Incomplete chunk — ignore
+                        } catch (parseErr) {
+                            // Re-throw real errors, ignore JSON parse failures
+                            if (parseErr instanceof Error && parseErr.message !== 'Unexpected end of JSON input') {
+                                throw parseErr;
+                            }
                         }
                     }
                 }
@@ -243,30 +263,41 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
                 setIsStreaming(false);
                 setStreamingMessageId(undefined);
 
-                // Save assistant message to DB (non-blocking)
-                if (accumulatedContent) {
+                // Persist assistant message + update conversation timestamp
+                if (accumulatedContent && canPersist && !currentConversationId.startsWith("local-")) {
                     messagesService.createMessage({
                         conversation_id: currentConversationId,
-                        role: "assistant",
+                        role: 'assistant',
                         content: accumulatedContent,
-                        provider: "openrouter",
+                        provider: 'openrouter',
                         model: modelAtSend.model,
                     }).catch((e) => console.error("Failed to save assistant message:", e));
+
+                    supabase
+                        .from('conversations')
+                        .update({ updated_at: new Date().toISOString() })
+                        .eq('id', currentConversationId)
+                        .then(() => onMessagesChanged?.());
                 }
 
-            } catch (error: any) {
-                if (error.name === "AbortError") {
+            } catch (error: unknown) {
+                const err = error as Error;
+                if (err.name === "AbortError") {
                     toast.info("Generation stopped");
                 } else {
-                    const msg: string = error.message || "";
+                    const msg: string = err.message || "";
                     console.error("Chat error:", msg);
-                    if (msg.includes("API key") || msg.includes("401") || msg.includes("key not configured")) {
-                        toast.error("API key not configured", {
-                            description: "Go to Settings → LLM Providers and add your OpenRouter key.",
+                    if (msg.includes("User not found") || msg.includes("401") || msg.includes("API key") || msg.includes("key not configured") || msg.includes("Unauthorized")) {
+                        toast.error("OpenRouter API key invalid", {
+                            description: "The key in .env is expired or incorrect. Get a new key at openrouter.ai/keys.",
                         });
-                    } else if (msg.includes("No endpoints found")) {
+                    } else if (msg.includes("No endpoints found") || msg.includes("no endpoints")) {
                         toast.error("Model unavailable", {
                             description: "The selected model has no available endpoints. Try a different model.",
+                        });
+                    } else if (msg.includes("rate limit") || msg.includes("429")) {
+                        toast.error("Rate limit hit", {
+                            description: "Too many requests. Wait a moment and try again.",
                         });
                     } else {
                         toast.error("Failed to generate response", { description: msg });
@@ -280,7 +311,7 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
             }
         },
         // conversationId MUST be in deps to avoid stale closure creating duplicate conversations
-        [user, messages, conversationId, selectedPreset, selectedTool, onConversationCreated]
+        [user, messages, conversationId, selectedPreset, selectedTool, toolMode, onConversationCreated, onMessagesChanged]
     );
 
     const handleStop = useCallback(() => {
@@ -320,8 +351,8 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
                             className="min-w-[180px]"
                         />
                         <ToolsDropdown
-                            workflows={mockWorkflows}
-                            mcpTools={mockMcpTools}
+                            workflows={liveWorkflows}
+                            mcpTools={liveMcpTools}
                             selectedTool={selectedTool}
                             onSelectTool={setSelectedTool}
                             className="min-w-[180px]"
@@ -342,7 +373,15 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
             )}
 
             {/* Messages area */}
-            {hasMessages && (
+            {loadingHistory && (
+                <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center space-y-3">
+                        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                        <p className="text-sm text-zinc-500">Loading conversation...</p>
+                    </div>
+                </div>
+            )}
+            {!loadingHistory && hasMessages && (
                 <div className="flex-1 overflow-y-auto">
                     <EnhancedMessageList
                         messages={messages}
@@ -354,6 +393,16 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
 
             {/* Chat input (centered when empty, bottom when has messages) */}
             <div className={hasMessages ? "border-t border-zinc-800 p-4" : "flex-1 flex items-center justify-center"}>
+                {showVoice && (
+                    <div className="flex justify-center pb-4">
+                        <VoiceAssistant
+                            onTranscript={(text) => {
+                                handleSend(text);
+                                setShowVoice(false);
+                            }}
+                        />
+                    </div>
+                )}
                 <EnhancedChatInput
                     onSend={handleSend}
                     onStop={handleStop}
@@ -365,14 +414,25 @@ export function EnhancedChatWindow({ loadConversationId, onConversationCreated }
                     onPresetChange={setSelectedPreset}
                     selectedTool={selectedTool}
                     onToolChange={setSelectedTool}
-                    workflows={mockWorkflows}
-                    mcpTools={mockMcpTools}
-                    disabled={!user}
+                    workflows={liveWorkflows}
+                    mcpTools={liveMcpTools}
+                    toolMode={toolMode}
+                    onToolModeChange={setToolMode}
+                    onVoiceClick={() => setShowVoice((v) => !v)}
+                    onImageGenClick={() => setShowImageGen(true)}
                     placeholder={
                         user
-                            ? "Ask me anything..."
-                            : "Please log in to start chatting"
+                            ? "Ask me anything… type @ to mention a tool"
+                            : "Ask me anything… sign in later if you want chat history saved"
                     }
+                />
+                <ImageGenModal
+                    open={showImageGen}
+                    onOpenChange={setShowImageGen}
+                    onInsert={(url, prompt) => {
+                        handleSend(`![${prompt}](${url})`);
+                        setShowImageGen(false);
+                    }}
                 />
             </div>
         </div>

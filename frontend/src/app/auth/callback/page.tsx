@@ -20,7 +20,7 @@ export default function AuthCallbackPage() {
 
             if (session) {
                 // Email confirmed successfully, redirect to dashboard
-                router.push('/');
+                router.push('/chat-enhanced');
             } else {
                 // No session, redirect to signin
                 router.push('/auth/signin');

@@ -15,8 +15,12 @@ import {
   Panel,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Save, Play, Plus, Trash2, Settings2, Database, Zap, Cpu, Globe } from 'lucide-react';
+import { Save, Play, Plus, Trash2, Settings2, Database, Zap, Cpu, Globe, Check } from 'lucide-react';
 import { cn } from '@/src/lib/utils';
+import { useWorkflows } from '@/src/lib/hooks/useDatabase';
+import { serialize } from '@/src/lib/workflowSerializer';
+import { useAuthStore } from '@/src/lib/store';
+import { toast } from 'sonner';
 
 const initialNodes: Node[] = [
   {
@@ -49,6 +53,10 @@ export default function WorkflowEditor() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const { user } = useAuthStore();
+  const { createWorkflow } = useWorkflows();
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({ ...params, animated: true, style: { stroke: '#4f46e5' } }, eds)),
@@ -57,6 +65,44 @@ export default function WorkflowEditor() {
 
   const onNodeClick = (_: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
+  };
+
+  const handleSaveDraft = async () => {
+    if (!user) { toast.error('You must be logged in to save'); return; }
+    setIsSaving(true);
+    try {
+      const definition = serialize(nodes, edges, undefined, 'Untitled Workflow');
+      await createWorkflow({
+        name: 'Untitled Workflow',
+        description: 'Created in visual editor',
+        definition,
+        is_published: false,
+      });
+      toast.success('Workflow saved as draft');
+    } catch {
+      toast.error('Failed to save workflow');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!user) { toast.error('You must be logged in to publish'); return; }
+    setIsPublishing(true);
+    try {
+      const definition = serialize(nodes, edges, undefined, 'Untitled Workflow');
+      await createWorkflow({
+        name: 'Untitled Workflow',
+        description: 'Published from visual editor',
+        definition,
+        is_published: true,
+      });
+      toast.success('Workflow published as a chat tool');
+    } catch {
+      toast.error('Failed to publish workflow');
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   const addNode = (type: string) => {
@@ -117,15 +163,23 @@ export default function WorkflowEditor() {
           <Background color="#27272a" gap={20} />
           <Controls className="bg-zinc-900 border-zinc-800 fill-zinc-400" />
           <MiniMap className="bg-zinc-900 border-zinc-800" nodeColor="#27272a" maskColor="rgba(0,0,0,0.5)" />
-          
+
           <Panel position="top-right" className="flex gap-2">
-            <button className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-semibold text-zinc-300 hover:bg-zinc-800 transition-all">
-              <Save className="w-4 h-4" />
-              Save Draft
+            <button
+              onClick={handleSaveDraft}
+              disabled={isSaving}
+              className="flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-semibold text-zinc-300 hover:bg-zinc-800 transition-all disabled:opacity-50"
+            >
+              {isSaving ? <Check className="w-4 h-4 animate-pulse" /> : <Save className="w-4 h-4" />}
+              {isSaving ? 'Saving…' : 'Save Draft'}
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-lg text-xs font-semibold text-white hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20">
-              <Play className="w-4 h-4" />
-              Publish Tool
+            <button
+              onClick={handlePublish}
+              disabled={isPublishing}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-lg text-xs font-semibold text-white hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50"
+            >
+              {isPublishing ? <Check className="w-4 h-4 animate-pulse" /> : <Play className="w-4 h-4" />}
+              {isPublishing ? 'Publishing…' : 'Publish Tool'}
             </button>
           </Panel>
         </ReactFlow>
@@ -144,13 +198,13 @@ export default function WorkflowEditor() {
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-widest font-bold text-zinc-500">Node Name</label>
-                <input 
-                  type="text" 
-                  value={selectedNode.data.label as string} 
+                <input
+                  type="text"
+                  value={selectedNode.data.label as string}
                   onChange={(e) => {
                     const newLabel = e.target.value;
                     setNodes(nds => nds.map(n => n.id === selectedNode.id ? { ...n, data: { ...n.data, label: newLabel } } : n));
@@ -170,7 +224,7 @@ export default function WorkflowEditor() {
 
               <div className="space-y-2">
                 <label className="text-[10px] uppercase tracking-widest font-bold text-zinc-500">System Prompt</label>
-                <textarea 
+                <textarea
                   rows={6}
                   placeholder="Enter instructions for this node..."
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-2 text-sm text-zinc-200 focus:outline-none focus:border-indigo-500/50 resize-none"

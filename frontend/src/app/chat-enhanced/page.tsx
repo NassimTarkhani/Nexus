@@ -1,7 +1,12 @@
 "use client";
 
-import { EnhancedChatWindow } from "@/src/components/EnhancedChatWindow";
+import AuthProvider from "@/src/components/AuthProvider";
+import AppShell from "@/src/components/AppShell";
 
 export default function EnhancedChatPage() {
-    return <EnhancedChatWindow />;
+    return (
+        <AuthProvider>
+            <AppShell initialView="chat" />
+        </AuthProvider>
+    );
 }
