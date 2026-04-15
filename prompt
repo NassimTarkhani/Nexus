@@ -1,0 +1,95 @@
+You are an experienced frontend engineering assistant. Your mission: generate a complete, production-structured frontend-only repository (Next.js + TypeScript) implementing the NEXUS / Better Chatbot UX and features described below. This is frontend-only work — no AWS infra, no backend implementation except lightweight mocks or Supabase-based auth where required. Produce code, components, pages, basic tests, and deployment config (Vercel friendly). Keep implementations minimal but clean, documented, and ready for integration with backend services later.
+
+Primary goals
+- Build a user-facing frontend for the NEXUS MVP focused on chat, multi-AI connectors, visual workflows, agents, tools, and collaboration.
+- Use Supabase for authentication and user/tenant identity (replace any previous AWS auth references).
+- Provide clear extension points / adapters for real LLM connectors (OpenAI, Anthropic, Google, xAI, Ollama) and MCP tools, but only implement client-side wiring and mock adapters for local dev.
+- Prioritize developer ergonomics, testability, accessibility, and deployability to Vercel.
+
+Technical stack (required)
+- Next.js (latest) with App Router + TypeScript
+- Tailwind CSS + shadcn/ui component primitives
+- React Flow for visual workflow editor
+- Supabase JS client for authentication (email, OAuth providers) and realtime (optional)
+- Zustand or React Context for client state (preference: Zustand)
+- SWR or React Query for data fetching (pref: React Query)
+- Vercel-friendly build and environment patterns
+- Testing: Jest + React Testing Library + Playwright or Cypress for a minimal E2E
+- Lint/format: ESLint + Prettier + TypeScript
+
+Key user-facing features to implement (frontend scope)
+1) Auth & Multi-tenant UI
+- Sign-up / Sign-in / Forgot password flows using Supabase Auth UI (customize UI to match design system).
+- Tenant switcher and tenant-aware UI elements (simulate tenants via Supabase user metadata or a mocked tenants context).
+
+2) Chat RAG UI (Better Chatbot-inspired)
+- Conversation list + chat window with streaming-like UI for LLM responses (simulate streaming using chunked setTimeouts for mocks).
+- Quick tool mentions via `@` autocomplete: show tools, agents, workflows, and MCP tools; pressing Enter inserts mention into the input.
+- Tool mention UI should allow selecting tools and showing short tool docs inline before send.
+- Tool choice mode toggle: Auto / Manual / None affecting whether the UI will allow tools to be attached to a message.
+- Message composer supports attachments (file upload stub), image generation request modal, and tool presets.
+
+3) Multi-Model Provider Connectors (frontend)
+- Settings UI to add/configure LLM providers (OpenAI key, Anthropic key, xAI, Ollama local host). These are client-side configs stored in localStorage or Supabase user metadata (for demo).
+- Provider selection per-chat or per-agent.
+- Provide mock adapter implementations for each provider; wire UI so swapping to a real adapter only needs replacing the adapter module.
+
+4) Visual Workflow Editor
+- Use React Flow to implement a drag-and-drop editor with node types: LLM node, Tool node, Webhook trigger, Cron trigger, Output node.
+- Node properties panel allowing config of prompts, model selection, and tool bindings.
+- Save / Load workflows to local storage and provide export/import JSON.
+- Ability to publish a workflow as a callable tool (front-end-only manifest) that the chat composer can reference with `@workflow_name`.
+
+5) Custom Agents and Presets
+- UI to create agents (name, system prompt, allowed tools, default model). Agents can be invoked from chat with `@agent_name`.
+- Agent sharing modal (share link or copyable JSON manifest) for team collaboration.
+
+6) Tooling & Executors (UI)
+- Built-in tool palette: web-search (mock), JS executor (sandboxed eval with strict restrictions for demo), Python executor placeholder, data-visualization tool (charting component), Playwright MCP demo stub (explain how agent would call it).
+- Tool chooser component integrated into composer and node editor.
+
+7) Image Generation UI
+- Modal for image generation / edit requests. Connect to mock adapters for OpenAI / Gemini / xAI; show preview gallery and allow inserting generated images into chat.
+
+8) Voice Assistant (frontend placeholder)
+- Voice record/playback UI using WebRTC/MediaRecorder that can stream audio to a mock realtime endpoint; include a clear placeholder for integrating real Realtime APIs later.
+
+9) Collaboration & Sharing
+- Share agents/workflows via copyable JSON manifests and a simple share modal allowing role selection for sharing (viewer/editor) — store shared items in localStorage or Supabase (demo mode).
+
+Developer deliverables
+- Repo scaffold under `/frontend` with Next.js app and clear structure: `/app`, `/components`, `/lib`, `/hooks`, `/styles`, `/test`.
+- Implement pages: `/login`, `/signup`, `/dashboard` (tenant overview), `/chat`, `/workflows`, `/agents`, `/settings`.
+- Core components: `ChatWindow`, `Composer`, `ToolMention`, `ProviderSettings`, `WorkflowEditor` (React Flow), `AgentEditor`, `ImageGenModal`, `VoiceAssistant`, `ShareModal`.
+- Lib/adapters: `supabaseClient.ts`, `providers/*` mock adapters, `mcpClient.ts` (mock), `workflowSerializer.ts`.
+- State: auth store (Supabase), app state store (Zustand), query client config (React Query).
+- Minimal styling with Tailwind and shadcn primitives; include a small theme.
+- Dockerfile and `vercel.json` for easy Vercel deploy (optional); include `README.md` with local run steps.
+- Unit tests: add sample tests for `ToolMention`, `Composer`, and `WorkflowEditor` logic.
+- E2E: one Playwright test for login → open chat → send sample message with `@web-search` mention (mocked) and assert UI behavior.
+
+Mocks and Backend Integration Notes
+- Supabase: implement real Supabase auth flows (email + OAuth) on the frontend. For server-side API calls (LLM, embeddings, MCP), provide mock endpoints in `/api/mock/*` that return realistic JSON and simulate streaming.
+- Provide an `env.example` listing required environment variables (SUPABASE_URL, SUPABASE_ANON_KEY) and instructions to create a free Supabase project.
+- For storage (images/docs), use the Supabase Storage SDK or client-side file preview and upload to Supabase Storage if credentials provided; otherwise fall back to local in-memory store.
+
+Acceptance criteria for the generated frontend
+- Next.js app boots locally with `npm install` + `npm run dev` and has working Supabase sign-in/up flows (using provided env vars).
+- Chat page supports `@` tool mentions UI and can invoke at least one mock tool (`web-search`) and show a mocked streaming response UI.
+- Visual workflow editor works in-browser, allows save/load, and published workflows appear in the tool mention list.
+- Provider settings UI exists and mock adapters can be selected per-chat or per-agent.
+- Basic unit tests and one E2E test pass locally.
+
+Output required from the generator
+1) Repository tree and list of created files for the frontend scaffold.
+2) Key file contents inline: `package.json`, `next.config.js`, `tailwind.config.js`, `app/layout.tsx`, `app/page.tsx` (or `/chat/page.tsx`), `components/ChatWindow.tsx`, `components/WorkflowEditor.tsx`, `lib/supabaseClient.ts`, `lib/providers/mockProvider.ts`, `hooks/useAuth.ts`, `Dockerfile`, `vercel.json`, `README.md`, sample Playwright test.
+3) Local run instructions and required env vars.
+4) Short checklist of next backend integration tasks and priorities.
+
+Constraints for the generator
+- No proprietary AWS services or references; remove any Amazon-specific infra from the scaffold. Focus on Vercel + Supabase for deployment and hosting patterns.
+- Keep code minimal and easy to review; do not implement full LLM calls or store secrets in code. Use environment-driven config only.
+- Use TypeScript with strict types where practical.
+- Include comments and README notes that explain where to swap mock adapters for real backend integrations.
+
+End: produce the full frontend scaffold and files requested above, ready to be saved into the repository root under `/frontend`. Provide short run commands for local dev and a Vercel deploy button snippet in the `README.md`.

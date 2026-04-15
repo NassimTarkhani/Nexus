@@ -1,0 +1,265 @@
+@import "tailwindcss";
+
+@theme {
+  /* Base color palettes */
+  --color-zinc-50: #fafafa;
+  --color-zinc-100: #f4f4f5;
+  --color-zinc-200: #e4e4e7;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #52525b;
+  --color-zinc-700: #3f3f46;
+  --color-zinc-800: #27272a;
+  --color-zinc-900: #18181b;
+  --color-zinc-950: #09090b;
+
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6366f1;
+  --color-indigo-600: #4f46e5;
+  --color-indigo-700: #4338ca;
+
+  --color-purple-400: #c084fc;
+  --color-purple-500: #a855f7;
+  --color-purple-600: #9333ea;
+
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+}
+
+/* Dark Theme (Default) */
+:root[data-theme="dark"],
+:root {
+  --background: 9 9 11;
+  /* zinc-950 */
+  --foreground: 250 250 250;
+  /* zinc-50 */
+
+  --card: 24 24 27;
+  /* zinc-900 */
+  --card-foreground: 250 250 250;
+
+  --popover: 24 24 27;
+  --popover-foreground: 250 250 250;
+
+  --primary: 99 102 241;
+  /* indigo-500 */
+  --primary-foreground: 250 250 250;
+
+  --secondary: 39 39 42;
+  /* zinc-800 */
+  --secondary-foreground: 250 250 250;
+
+  --muted: 39 39 42;
+  --muted-foreground: 161 161 170;
+  /* zinc-400 */
+
+  --accent: 79 70 229;
+  /* indigo-600 */
+  --accent-foreground: 250 250 250;
+
+  --destructive: 239 68 68;
+  --destructive-foreground: 250 250 250;
+
+  --border: 39 39 42;
+  /* zinc-800 */
+  --input: 39 39 42;
+  --ring: 99 102 241;
+
+  --radius: 0.5rem;
+
+  --bg-gradient-from: 24 24 27;
+  --bg-gradient-to: 9 9 11;
+}
+
+/* Light Theme */
+:root[data-theme="light"] {
+  --background: 255 255 255;
+  --foreground: 9 9 11;
+  /* zinc-950 */
+
+  --card: 250 250 250;
+  /* zinc-50 */
+  --card-foreground: 9 9 11;
+
+  --popover: 255 255 255;
+  --popover-foreground: 9 9 11;
+
+  --primary: 79 70 229;
+  /* indigo-600 */
+  --primary-foreground: 250 250 250;
+
+  --secondary: 244 244 245;
+  /* zinc-100 */
+  --secondary-foreground: 9 9 11;
+
+  --muted: 244 244 245;
+  --muted-foreground: 113 113 122;
+  /* zinc-500 */
+
+  --accent: 99 102 241;
+  /* indigo-500 */
+  --accent-foreground: 255 255 255;
+
+  --destructive: 239 68 68;
+  --destructive-foreground: 250 250 250;
+
+  --border: 228 228 231;
+  /* zinc-200 */
+  --input: 228 228 231;
+  --ring: 79 70 229;
+
+  --bg-gradient-from: 255 255 255;
+  --bg-gradient-to: 244 244 245;
+}
+
+/* Atmospheric Theme (Immersive) */
+:root[data-theme="atmospheric"] {
+  --background: 10 10 25;
+  /* Deep blue-black */
+  --foreground: 220 220 250;
+
+  --card: 20 20 40;
+  --card-foreground: 220 220 250;
+
+  --popover: 20 20 40;
+  --popover-foreground: 220 220 250;
+
+  --primary: 168 85 247;
+  /* purple-500 */
+  --primary-foreground: 250 250 250;
+
+  --secondary: 30 30 60;
+  --secondary-foreground: 220 220 250;
+
+  --muted: 30 30 60;
+  --muted-foreground: 140 140 180;
+
+  --accent: 147 51 234;
+  /* purple-600 */
+  --accent-foreground: 250 250 250;
+
+  --destructive: 239 68 68;
+  --destructive-foreground: 250 250 250;
+
+  --border: 40 40 80;
+  --input: 30 30 60;
+  --ring: 168 85 247;
+
+  --bg-gradient-from: 10 10 25;
+  --bg-gradient-to: 20 20 50;
+}
+
+body {
+  background: rgb(var(--background));
+  color: rgb(var(--foreground));
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Smooth theme transitions */
+* {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
+
+/* Custom scrollbar - adapts to theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--muted));
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--border));
+}
+
+/* Background gradient overlay for atmospheric theme */
+:root[data-theme="atmospheric"]::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(ellipse 80% 50% at 50% -20%,
+      rgba(147, 51, 234, 0.15),
+      transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Animations */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+.animate-slide-up {
+  animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+/* Loading pulse */
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

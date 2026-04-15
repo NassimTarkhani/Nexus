@@ -1,0 +1,5 @@
+{
+  "name": "NEXUS AI Platform",
+  "description": "A production-grade AI workspace for chat, visual workflows, and agent orchestration.",
+  "requestFramePermissions": ["camera", "microphone"]
+}
